@@ -6,6 +6,14 @@ import { analyzeOffer, draftComplaint } from './agent.js';
 import { loadReferenceData, referenceStats, saveCase, recentCases } from './store.js';
 import { speak, verdictScript } from './voice.js';
 import { translateReport, isSupported } from './translate.js';
+import { consume, LIMIT_MESSAGE } from './budget.js';
+
+/** Stops Gemini-powered routes once today's spending lock is reached. */
+const budget = (kind) => async (req, res, next) => {
+  if (await consume(kind)) return next();
+  const lang = req.body?.lang === 'ne' ? 'ne' : 'en';
+  res.status(429).json({ success: false, error: LIMIT_MESSAGE[lang] });
+};
 import { handleUpdate, startPolling, telegramEnabled } from './telegram.js';
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -45,7 +53,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ success: true, data: { ok: true, ...referenceStats() } });
 });
 
-app.post('/api/check', rateLimit, upload.array('files', MAX_FILES), async (req, res) => {
+app.post('/api/check', rateLimit, upload.array('files', MAX_FILES), budget('check'), async (req, res) => {
   const text = String(req.body?.text ?? '').slice(0, MAX_TEXT_CHARS);
   const files = (req.files ?? []).map((f) => ({ mimeType: f.mimetype, data: f.buffer.toString('base64') }));
   if (!text.trim() && files.length === 0) {
@@ -70,7 +78,7 @@ app.post('/api/check', rateLimit, upload.array('files', MAX_FILES), async (req, 
   }
 });
 
-app.post('/api/complaint', rateLimit, async (req, res) => {
+app.post('/api/complaint', rateLimit, budget('complaint'), async (req, res) => {
   const report = req.body?.report;
   if (!report?.facts) {
     res.status(400).json({ success: false, error: 'Run a check first.' });
@@ -84,7 +92,7 @@ app.post('/api/complaint', rateLimit, async (req, res) => {
   }
 });
 
-app.post('/api/translate', rateLimit, async (req, res) => {
+app.post('/api/translate', rateLimit, budget('translate'), async (req, res) => {
   const lang = String(req.body?.lang);
   const report = req.body?.report;
   if (!report?.claims || !isSupported(lang)) {
@@ -94,7 +102,7 @@ app.post('/api/translate', rateLimit, async (req, res) => {
   res.json({ success: true, data: await translateReport(report, lang) });
 });
 
-app.post('/api/speak', rateLimit, async (req, res) => {
+app.post('/api/speak', rateLimit, budget('speak'), async (req, res) => {
   const lang = isSupported(String(req.body?.lang)) ? req.body.lang : 'en';
   const report = req.body?.report;
   if (!report?.risk) {

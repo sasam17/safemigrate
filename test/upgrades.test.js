@@ -169,6 +169,17 @@ test('voice script uses the translated text and Urdu labels', async () => {
   assert.ok(!s.includes('Scam'));
 });
 
+test('spending lock allows up to the daily limit and then refuses', async () => {
+  const { allow, consume, todayKey } = await import('../src/budget.js');
+  assert.equal(allow(1499, 1, 1500), true);
+  assert.equal(allow(1500, 1, 1500), false);
+  assert.equal(allow(1499, 2, 1500), false);
+  assert.match(todayKey(new Date('2026-10-15T23:59:00Z')), /^2026-10-15$/);
+  let granted = 0;
+  for (let i = 0; i < 1600; i += 1) if (await consume('test')) granted += 1;
+  assert.ok(granted <= 1500, `granted ${granted}`);
+});
+
 test('person matching needs every token of the listed name', () => {
   const list = [{ name: 'Ram Bahadur Thapa', notice_ref: 'n1' }];
   assert.equal(findPeople(['Ram'], list).length, 0);

@@ -6,6 +6,7 @@ import { analyzeOffer } from './agent.js';
 import { saveCase } from './store.js';
 import { speak, verdictScript, localText, RISK_LABEL } from './voice.js';
 import { translateReport } from './translate.js';
+import { consume, LIMIT_MESSAGE } from './budget.js';
 
 const ORIGIN_LANG = { NP: 'ne', PK: 'ur', PH: 'tl' };
 
@@ -124,6 +125,10 @@ async function handleMessage(msg) {
     const input = await evidenceFrom(msg);
     if (!input.text.trim() && input.files.length === 0) {
       await call('sendMessage', { chat_id: chatId, text: np ? 'फोटो, भ्वाइस वा म्यासेज पठाउनुहोस्।' : 'Send a photo, voice note or message.' });
+      return;
+    }
+    if (!(await consume('telegram', 2))) {
+      await call('sendMessage', { chat_id: chatId, text: LIMIT_MESSAGE[np ? 'ne' : 'en'] });
       return;
     }
     await call('sendChatAction', { chat_id: chatId, action: 'typing' });
