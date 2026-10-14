@@ -166,7 +166,7 @@
       el('p', { className: 'muted', textContent: `Model: ${r.model}` }));
 
     const listen = el('button', { className: 'secondary', type: 'button', textContent: t('listen') });
-    listen.addEventListener('click', () => speak(r));
+    listen.addEventListener('click', () => speak(r, listen));
     const complain = el('button', { className: 'secondary', type: 'button', textContent: t('complaint') });
     complain.addEventListener('click', () => draftComplaint(r, complain));
 
@@ -214,7 +214,28 @@
     return 'done';
   }
 
-  function speak(r) {
+  // Gemini Nepali voice first; the browser's own voice only if that fails.
+  let audio = null;
+  async function speak(r, btn) {
+    const label = btn?.textContent;
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+      const res = await fetch('/api/speak', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report: r, lang: state.lang === 'ne' ? 'ne' : 'en' }),
+      });
+      if (!res.ok) throw new Error('voice unavailable');
+      if (audio) audio.pause();
+      audio = new Audio(URL.createObjectURL(await res.blob()));
+      await audio.play();
+    } catch {
+      browserSpeak(r);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+    }
+  }
+
+  function browserSpeak(r) {
     if (!('speechSynthesis' in window)) return;
     const np = state.lang === 'ne';
     const lines = [t(`risk${r.risk}`), np ? r.facts.summary_np : r.facts.summary_en, ...r.flags.map((f) => (np ? f.title_np : f.title_en))];

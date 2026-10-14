@@ -119,6 +119,27 @@ test('placeholder values like "unknown" are treated as empty, never as an agency
   assert.equal(f.fee_amount, 0);
 });
 
+test('telegram report shows stamp, cross-border warning and next steps in Nepali', async () => {
+  const { formatReport } = await import('../src/telegram.js');
+  const facts = { visa_type: 'visit', job_title: 'iGaming support', sector_keywords: ['iGaming'], destination_country: 'Dubai', summary_np: 'सारांश', summary_en: 'Summary' };
+  const flags = evaluate(facts, { agency: { status: 'not_mentioned' }, fingerprints: [{ hint: 'phone:…123', highRisk: 1, origins: { PK: 1 } }] }, NP).flags;
+  const claims = buildClaims(facts, { agency: { status: 'not_mentioned' }, flags }, NP);
+  const text = formatReport({ risk: 'high', facts, flags, claims, origin: { complaint_url: 'https://ujuri.dofe.gov.np/' } }, true);
+  assert.ok(text.startsWith('🚨 उच्च जोखिम'));
+  assert.ok(text.includes('🌏'));
+  assert.ok(text.includes('🔴'));
+  assert.ok(text.includes('→'));
+  assert.ok(text.includes('ujuri.dofe.gov.np'));
+});
+
+test('verdict script reads the stamp, summary and red claims', async () => {
+  const { verdictScript } = await import('../src/voice.js');
+  const s = verdictScript({ risk: 'high', facts: { summary_np: 'यो जाल हो' }, claims: [{ status: 'red', detail_np: 'भिसा गलत' }, { status: 'amber', detail_np: 'नपढ्ने' }] }, 'ne');
+  assert.ok(s.startsWith('उच्च जोखिम'));
+  assert.ok(s.includes('भिसा गलत'));
+  assert.ok(!s.includes('नपढ्ने'));
+});
+
 test('person matching needs every token of the listed name', () => {
   const list = [{ name: 'Ram Bahadur Thapa', notice_ref: 'n1' }];
   assert.equal(findPeople(['Ram'], list).length, 0);

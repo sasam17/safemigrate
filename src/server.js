@@ -4,6 +4,8 @@ import multer from 'multer';
 import { fileURLToPath } from 'node:url';
 import { analyzeOffer, draftComplaint } from './agent.js';
 import { loadReferenceData, referenceStats, saveCase, recentCases } from './store.js';
+import { speak, verdictScript } from './voice.js';
+import { handleUpdate, startPolling, telegramEnabled } from './telegram.js';
 
 const PORT = Number(process.env.PORT) || 8080;
 const MAX_FILES = 4;
@@ -80,6 +82,41 @@ app.post('/api/complaint', rateLimit, async (req, res) => {
   }
 });
 
+app.post('/api/speak', rateLimit, async (req, res) => {
+  const lang = req.body?.lang === 'en' ? 'en' : 'ne';
+  const report = req.body?.report;
+  if (!report?.risk) {
+    res.status(400).json({ success: false, error: 'Run a check first.' });
+    return;
+  }
+  try {
+    const wav = await speak(verdictScript(report, lang), lang);
+    res.set({ 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' }).send(wav);
+  } catch (err) {
+    console.error('[speak] failed:', err.message);
+    res.status(502).json({ success: false, error: 'Voice is not available right now.' });
+  }
+});
+
+// Telegram webhook (Cloud Run). The secret is checked twice: in the path and
+// in the header Telegram sends, so nobody else can post fake updates.
+app.post('/telegram/:secret', async (req, res) => {
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const ok = telegramEnabled() && secret
+    && req.params.secret === secret
+    && req.get('X-Telegram-Bot-Api-Secret-Token') === secret;
+  if (!ok) {
+    res.sendStatus(404);
+    return;
+  }
+  try {
+    await handleUpdate(req.body);
+  } catch (err) {
+    console.error('[telegram] update failed:', err.message);
+  }
+  res.sendStatus(200);
+});
+
 app.get('/api/stats', async (_req, res) => {
   const cases = await recentCases();
   const byCountry = {};
@@ -109,5 +146,8 @@ app.use((err, _req, res, _next) => {
 
 const ref = await loadReferenceData();
 app.listen(PORT, () => {
-  console.log(`[safemigrate] listening on ${PORT} | agencies=${ref.agencies} fraudList=${ref.fraudList} firestore=${ref.firestore}`);
+  console.log(`[safemigrate] listening on ${PORT} | agencies=${JSON.stringify(ref.agencies)} fraudList=${ref.fraudList} firestore=${ref.firestore}`);
+  if (telegramEnabled() && process.env.TELEGRAM_MODE === 'polling') {
+    startPolling().catch((err) => console.error('[telegram] polling stopped:', err.message));
+  }
 });
