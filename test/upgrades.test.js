@@ -109,6 +109,16 @@ test('licensed agency contacted from an unregistered number turns amber (imperso
   assert.ok(a.next_en.includes('9800001234'));
 });
 
+test('placeholder values like "unknown" are treated as empty, never as an agency name', async () => {
+  const { sanitizeFacts } = await import('../src/agent.js');
+  const f = sanitizeFacts({ agency_name: 'unknown', employer_name: 'Not mentioned', visa_type: 'unknown', recruiter_names: ['N/A', 'Asma'], fee_amount: 0 });
+  assert.equal(f.agency_name, '');
+  assert.equal(f.employer_name, '');
+  assert.equal(f.visa_type, 'unknown');
+  assert.deepEqual(f.recruiter_names, ['Asma']);
+  assert.equal(f.fee_amount, 0);
+});
+
 test('person matching needs every token of the listed name', () => {
   const list = [{ name: 'Ram Bahadur Thapa', notice_ref: 'n1' }];
   assert.equal(findPeople(['Ram'], list).length, 0);

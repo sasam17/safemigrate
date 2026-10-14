@@ -8,8 +8,46 @@ import { evaluate, getPack } from './rules.js';
 import { buildClaims } from './claims.js';
 import { fingerprintsFrom, lookupFingerprints, recordFingerprints } from './fingerprint.js';
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+// Ordered fallback chain: if a model is overloaded (429/5xx) we retry briefly,
+// then move to the next, so a demand spike never takes the app down.
+const DEFAULT_CHAIN = 'gemini-3-flash-preview,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash';
+// GEMINI_MODELS replaces the chain; GEMINI_MODEL only moves one model to the front.
+const MODELS = [...new Set([process.env.GEMINI_MODEL, ...(process.env.GEMINI_MODELS || DEFAULT_CHAIN).split(',')]
+  .map((m) => m?.trim()).filter(Boolean))];
+const RETRIES_PER_MODEL = 2;
+const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 const MAX_TOOL_ROUNDS = 4;
+const COOL_DOWN_MS = 60_000;
+const coolingUntil = new Map();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * generateContent with retry + model fallback. Returns {res, model}.
+ * Pass `pinned` to keep one check on the model that already answered
+ * (Gemini 3 tool calls carry thought signatures tied to that model).
+ */
+async function generate(params, pinned = null) {
+  let lastErr;
+  const ordered = pinned ? [pinned, ...MODELS.filter((m) => m !== pinned)] : MODELS;
+  // Skip models that were overloaded in the last minute, unless nothing else is left.
+  const healthy = ordered.filter((m) => (coolingUntil.get(m) ?? 0) < Date.now());
+  const chain = healthy.length ? healthy : ordered;
+  for (const model of chain) {
+    for (let attempt = 0; attempt < RETRIES_PER_MODEL; attempt += 1) {
+      try {
+        const config = { ...params.config, thinkingConfig: { thinkingLevel: 'LOW' } };
+        const res = await gemini().models.generateContent({ ...params, config, model });
+        return { res, model };
+      } catch (err) {
+        lastErr = err;
+        if (!RETRYABLE.has(err?.status)) throw err;
+        if (attempt === RETRIES_PER_MODEL - 1) coolingUntil.set(model, Date.now() + COOL_DOWN_MS);
+        else await sleep(600);
+      }
+    }
+  }
+  throw lastErr;
+}
 
 let client = null;
 export function gemini() {
@@ -112,6 +150,27 @@ const FACTS_SCHEMA = {
   required: ['visa_type', 'summary_en', 'summary_np'],
 };
 
+// Models sometimes write "unknown" instead of leaving a field empty; an agency
+// literally named "unknown" would then be reported as unlicensed.
+const PLACEHOLDER = /^(unknown|n\/?a|none|null|not (stated|mentioned|specified|provided|given)|-+|—)$/i;
+
+export function sanitizeFacts(raw) {
+  const clean = {};
+  for (const [key, value] of Object.entries(raw ?? {})) {
+    if (key === 'visa_type') {
+      clean[key] = value;
+    } else if (typeof value === 'string') {
+      const v = value.trim();
+      clean[key] = PLACEHOLDER.test(v) ? '' : v;
+    } else if (Array.isArray(value)) {
+      clean[key] = value.map((v) => (typeof v === 'string' ? v.trim() : v)).filter((v) => v !== '' && !(typeof v === 'string' && PLACEHOLDER.test(v)));
+    } else {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
 function evidenceParts({ text, files }) {
   const parts = (files ?? []).map((f) => ({ inlineData: { mimeType: f.mimeType, data: f.data } }));
   parts.push({ text: text?.trim() ? `Worker's message / pasted text:\n${text.trim()}` : 'Analyse the attached evidence.' });
@@ -120,16 +179,17 @@ function evidenceParts({ text, files }) {
 
 async function investigate(contents, trace, pack) {
   const impl = toolImpl(pack.code);
+  let pinned = null;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const res = await gemini().models.generateContent({
-      model: MODEL,
+    const { res, model } = await generate({
       contents,
       config: { systemInstruction: systemPrompt(pack), tools: TOOLS, temperature: 0.1 },
-    });
+    }, pinned);
+    pinned = model;
     const calls = res.functionCalls ?? [];
     const modelContent = res.candidates?.[0]?.content;
     if (modelContent) contents.push(modelContent);
-    if (calls.length === 0) return;
+    if (calls.length === 0) return pinned;
     const responses = await Promise.all(calls.map(async (call) => {
       const result = impl[call.name] ? await impl[call.name](call.args) : { error: `unknown tool ${call.name}` };
       trace.push({ tool: call.name, args: call.args, result });
@@ -137,11 +197,11 @@ async function investigate(contents, trace, pack) {
     }));
     contents.push({ role: 'user', parts: responses });
   }
+  return pinned;
 }
 
-async function extractFacts(contents, pack) {
-  const res = await gemini().models.generateContent({
-    model: MODEL,
+async function extractFacts(contents, pack, pinned) {
+  const { res, model } = await generate({
     contents: [...contents, { role: 'user', parts: [{ text: 'Now give the structured facts as JSON.' }] }],
     config: {
       systemInstruction: systemPrompt(pack),
@@ -149,8 +209,8 @@ async function extractFacts(contents, pack) {
       responseSchema: FACTS_SCHEMA,
       temperature: 0,
     },
-  });
-  const facts = JSON.parse(res.text);
+  }, pinned);
+  const facts = { ...sanitizeFacts(JSON.parse(res.text)), _model: model };
   // Nepal's fee cap is expressed in NPR.
   if (facts.fee_currency === 'NPR' && facts.fee_amount) facts.fee_demanded_npr = facts.fee_amount;
   return facts;
@@ -163,8 +223,8 @@ export async function analyzeOffer(input) {
   const pack = getPack(input.origin);
   const trace = [];
   const contents = [{ role: 'user', parts: evidenceParts(input) }];
-  await investigate(contents, trace, pack);
-  const facts = await extractFacts(contents, pack);
+  const pinned = await investigate(contents, trace, pack);
+  const { _model: model, ...facts } = await extractFacts(contents, pack, pinned);
 
   // Always run every check ourselves too, so a skipped tool call can't hide a flag.
   const agency = lookupAgency({ name: facts.agency_name, license_no: facts.agency_license_no, origin: pack.code });
@@ -181,7 +241,7 @@ export async function analyzeOffer(input) {
   await recordFingerprints(prints, { risk: verdict.risk, origin: pack.code, destination: verdict.country });
 
   return {
-    facts, agency, ...verdict, claims, trace, model: MODEL,
+    facts, agency, ...verdict, claims, trace, model,
     origin: { code: pack.code, name: pack.name, regulator: pack.regulator, complaint_url: pack.complaint_url },
   };
 }
@@ -191,8 +251,7 @@ export async function draftComplaint(report) {
   const pack = getPack(report.origin?.code);
   const lang = pack.code === 'NP' ? 'Nepali' : 'English';
   const facts = { facts: report.facts, flags: report.flags?.map((f) => f.title_en) };
-  const res = await gemini().models.generateContent({
-    model: MODEL,
+  const { res } = await generate({
     contents: [{
       role: 'user',
       parts: [{ text: `Write a short, formal complaint in ${lang} to the ${pack.regulator} about this suspicious foreign job offer. Use only these facts; leave [ ] blanks for the complainant's name, address and phone. Facts: ${JSON.stringify(facts)}` }],
