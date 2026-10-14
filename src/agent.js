@@ -26,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Pass `pinned` to keep one check on the model that already answered
  * (Gemini 3 tool calls carry thought signatures tied to that model).
  */
-async function generate(params, pinned = null) {
+export async function generate(params, pinned = null) {
   let lastErr;
   const ordered = pinned ? [pinned, ...MODELS.filter((m) => m !== pinned)] : MODELS;
   // Skip models that were overloaded in the last minute, unless nothing else is left.

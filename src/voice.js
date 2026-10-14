@@ -2,6 +2,7 @@
 // can listen in Nepali. Returns WAV audio; results are cached by text.
 import { createHash } from 'node:crypto';
 import { gemini } from './agent.js';
+import { LANGUAGES } from './translate.js';
 
 const TTS_MODELS = (process.env.GEMINI_TTS_MODELS || 'gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview')
   .split(',').map((m) => m.trim()).filter(Boolean);
@@ -10,9 +11,26 @@ const MAX_CHARS = 700;
 const CACHE_LIMIT = 200;
 const cache = new Map();
 
-const INSTRUCTION = {
-  ne: 'Read this aloud in clear, calm, slow Nepali, like a trusted helper explaining to a worker: ',
-  en: 'Read this aloud in clear, calm, slow English: ',
+const instruction = (lang) =>
+  `Read this aloud in clear, calm, slow ${LANGUAGES[lang] ?? 'English'}, like a trusted helper explaining to a worker: `;
+
+export const RISK_LABEL = {
+  en: { high: 'High risk', medium: 'Be careful', low: 'No major red flags' },
+  ne: { high: 'उच्च जोखिम', medium: 'सावधान', low: 'ठूलो खतरा देखिएन' },
+  hi: { high: 'उच्च जोखिम', medium: 'सावधान रहें', low: 'कोई बड़ा खतरा नहीं मिला' },
+  ur: { high: 'زیادہ خطرہ', medium: 'محتاط رہیں', low: 'کوئی بڑا خطرہ نہیں ملا' },
+  bn: { high: 'উচ্চ ঝুঁকি', medium: 'সাবধান', low: 'বড় কোনো ঝুঁকি পাওয়া যায়নি' },
+  tl: { high: 'Mataas na panganib', medium: 'Mag-ingat', low: 'Walang malaking panganib na nakita' },
+  id: { high: 'Risiko tinggi', medium: 'Hati-hati', low: 'Tidak ada tanda bahaya besar' },
+};
+const CLOSING = {
+  en: 'Check with the government office before you pay.',
+  ne: 'पैसा तिर्नु अघि सरकारी कार्यालयमा पक्का गर्नुहोस्।',
+  hi: 'पैसे देने से पहले सरकारी दफ़्तर से पक्का करें।',
+  ur: 'پیسے دینے سے پہلے سرکاری دفتر سے تصدیق کریں۔',
+  bn: 'টাকা দেওয়ার আগে সরকারি অফিসে নিশ্চিত হন।',
+  tl: 'Kumpirmahin sa opisina ng gobyerno bago magbayad.',
+  id: 'Pastikan ke kantor pemerintah sebelum membayar.',
 };
 
 /** Wraps raw 16-bit mono PCM in a WAV header (some models return bare PCM). */
@@ -48,7 +66,7 @@ export async function speak(text, lang = 'ne') {
     try {
       const res = await gemini().models.generateContent({
         model,
-        contents: [{ role: 'user', parts: [{ text: (INSTRUCTION[lang] ?? INSTRUCTION.en) + clean }] }],
+        contents: [{ role: 'user', parts: [{ text: instruction(lang) + clean }] }],
         config: {
           responseModalities: ['AUDIO'],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
@@ -67,13 +85,25 @@ export async function speak(text, lang = 'ne') {
   throw lastErr;
 }
 
+/** Picks the text for one claim/summary in the report's language. */
+export function localText(report, lang) {
+  const np = lang === 'ne';
+  const t = report.i18n?.lang === lang ? report.i18n : null;
+  return {
+    summary: t?.summary ?? (np ? report.facts?.summary_np : report.facts?.summary_en),
+    claim: (c, i) => t?.claims?.[i]?.detail ?? (np ? c.detail_np : c.detail_en),
+  };
+}
+
 /** The short script read aloud for a report: verdict, summary, then red claims. */
 export function verdictScript(report, lang = 'ne') {
-  const np = lang === 'ne';
-  const label = { high: np ? 'उच्च जोखिम' : 'High risk', medium: np ? 'सावधान' : 'Be careful', low: np ? 'ठूलो खतरा देखिएन' : 'No major red flags' }[report.risk] ?? '';
-  const summary = np ? report.facts?.summary_np : report.facts?.summary_en;
-  const reds = (report.claims ?? []).filter((c) => c.status === 'red').slice(0, 3)
-    .map((c) => (np ? c.detail_np : c.detail_en));
-  const close = np ? 'पैसा तिर्नु अघि सरकारी कार्यालयमा पक्का गर्नुहोस्।' : 'Check with the government office before you pay.';
-  return [label, summary, ...reds, close].filter(Boolean).join(np ? '। ' : '. ');
+  const text = localText(report, lang);
+  const label = (RISK_LABEL[lang] ?? RISK_LABEL.en)[report.risk] ?? '';
+  const reds = (report.claims ?? [])
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => c.status === 'red')
+    .slice(0, 3)
+    .map(({ c, i }) => text.claim(c, i));
+  const sep = ['ne', 'hi', 'bn'].includes(lang) ? '। ' : lang === 'ur' ? '۔ ' : '. ';
+  return [label, text.summary, ...reds, CLOSING[lang] ?? CLOSING.en].filter(Boolean).join(sep);
 }

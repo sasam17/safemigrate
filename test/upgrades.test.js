@@ -124,7 +124,7 @@ test('telegram report shows stamp, cross-border warning and next steps in Nepali
   const facts = { visa_type: 'visit', job_title: 'iGaming support', sector_keywords: ['iGaming'], destination_country: 'Dubai', summary_np: 'सारांश', summary_en: 'Summary' };
   const flags = evaluate(facts, { agency: { status: 'not_mentioned' }, fingerprints: [{ hint: 'phone:…123', highRisk: 1, origins: { PK: 1 } }] }, NP).flags;
   const claims = buildClaims(facts, { agency: { status: 'not_mentioned' }, flags }, NP);
-  const text = formatReport({ risk: 'high', facts, flags, claims, origin: { complaint_url: 'https://ujuri.dofe.gov.np/' } }, true);
+  const text = formatReport({ risk: 'high', facts, flags, claims, origin: { complaint_url: 'https://ujuri.dofe.gov.np/' } }, 'ne');
   assert.ok(text.startsWith('🚨 उच्च जोखिम'));
   assert.ok(text.includes('🌏'));
   assert.ok(text.includes('🔴'));
@@ -138,6 +138,35 @@ test('verdict script reads the stamp, summary and red claims', async () => {
   assert.ok(s.startsWith('उच्च जोखिम'));
   assert.ok(s.includes('भिसा गलत'));
   assert.ok(!s.includes('नपढ्ने'));
+});
+
+test('translations map back to summary, flags and claims by position', async () => {
+  const { collectStrings, applyTranslations } = await import('../src/translate.js');
+  const report = {
+    facts: { summary_en: 'S' },
+    flags: [{ title_en: 'F1' }, { title_en: 'F2' }],
+    claims: [{ detail_en: 'D1', next_en: 'N1' }, { detail_en: 'D2', next_en: null }],
+  };
+  const strings = collectStrings(report);
+  assert.deepEqual(strings, ['S', 'F1', 'F2', 'D1', 'N1', 'D2', '']);
+  const out = applyTranslations(report, 'ur', strings.map((s) => (s ? `ur:${s}` : s)));
+  assert.equal(out.i18n.summary, 'ur:S');
+  assert.deepEqual(out.i18n.flags, ['ur:F1', 'ur:F2']);
+  assert.deepEqual(out.i18n.claims[1], { detail: 'ur:D2', next: '' });
+  assert.equal(out.facts.summary_en, 'S', 'original English kept for auditing');
+});
+
+test('voice script uses the translated text and Urdu labels', async () => {
+  const { verdictScript } = await import('../src/voice.js');
+  const report = {
+    risk: 'high', facts: { summary_en: 'Scam' },
+    claims: [{ status: 'red', detail_en: 'Visit visa' }],
+    i18n: { lang: 'ur', summary: 'دھوکہ', claims: [{ detail: 'وزٹ ویزا' }] },
+  };
+  const s = verdictScript(report, 'ur');
+  assert.ok(s.startsWith('زیادہ خطرہ'));
+  assert.ok(s.includes('دھوکہ') && s.includes('وزٹ ویزا'));
+  assert.ok(!s.includes('Scam'));
 });
 
 test('person matching needs every token of the listed name', () => {

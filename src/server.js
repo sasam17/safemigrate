@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { analyzeOffer, draftComplaint } from './agent.js';
 import { loadReferenceData, referenceStats, saveCase, recentCases } from './store.js';
 import { speak, verdictScript } from './voice.js';
+import { translateReport, isSupported } from './translate.js';
 import { handleUpdate, startPolling, telegramEnabled } from './telegram.js';
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -52,8 +53,9 @@ app.post('/api/check', rateLimit, upload.array('files', MAX_FILES), async (req, 
     return;
   }
   const origin = ['NP', 'PK', 'PH'].includes(String(req.body?.origin)) ? req.body.origin : 'NP';
+  const lang = isSupported(String(req.body?.lang)) ? req.body.lang : 'en';
   try {
-    const report = await analyzeOffer({ text, files, origin });
+    const report = await translateReport(await analyzeOffer({ text, files, origin }), lang);
     await saveCase({
       origin,
       country: report.country,
@@ -82,8 +84,18 @@ app.post('/api/complaint', rateLimit, async (req, res) => {
   }
 });
 
+app.post('/api/translate', rateLimit, async (req, res) => {
+  const lang = String(req.body?.lang);
+  const report = req.body?.report;
+  if (!report?.claims || !isSupported(lang)) {
+    res.status(400).json({ success: false, error: 'Unsupported language or missing report.' });
+    return;
+  }
+  res.json({ success: true, data: await translateReport(report, lang) });
+});
+
 app.post('/api/speak', rateLimit, async (req, res) => {
-  const lang = req.body?.lang === 'en' ? 'en' : 'ne';
+  const lang = isSupported(String(req.body?.lang)) ? req.body.lang : 'en';
   const report = req.body?.report;
   if (!report?.risk) {
     res.status(400).json({ success: false, error: 'Run a check first.' });

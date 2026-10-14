@@ -33,7 +33,14 @@ body {
     var(--paper);
   min-height: 100vh;
 }
-html[lang='en'] body { font-family: 'Inter', 'Mukta', system-ui, sans-serif; font-size: 16px; }
+html[lang='en'] body, html[lang='tl'] body, html[lang='id'] body { font-family: 'Inter', 'Mukta', system-ui, sans-serif; font-size: 16px; }
+html[lang='bn'] body { font-family: 'Noto Sans Bengali', 'Inter', system-ui, sans-serif; }
+html[lang='ur'] body { font-family: 'Noto Naskh Arabic', 'Inter', system-ui, sans-serif; font-size: 18px; line-height: 1.8; }
+select.lang { appearance: auto; max-width: 9.5rem; }
+/* Right-to-left (Urdu): logical borders so accents sit on the reading side. */
+.flags li { border-left: 0; border-inline-start: 5px solid; }
+.quotes li { border-left: 0; border-inline-start: 3px solid var(--line); padding-left: 0; padding-inline-start: 10px; }
+.banner { box-shadow: none; border-inline-start: 4px solid var(--crimson); }
 
 button, input, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -192,7 +199,9 @@ textarea {
 .foot { max-width: 680px; margin: 8px auto 32px; padding: 0 16px; text-align: center; font-size: 13px; color: var(--ink-soft); }
 
 @media (max-width: 420px) {
-  .top { padding: 10px 12px; gap: 6px; }
+  .top { padding: 10px 12px; gap: 6px; flex-wrap: wrap; }
+  .tabs { flex-wrap: wrap; justify-content: flex-end; }
+  select.lang { max-width: 7.5rem; }
   .brand small { display: none; }
   .brand strong { font-size: 16px; }
   .logo { font-size: 22px; }

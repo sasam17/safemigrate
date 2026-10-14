@@ -35,19 +35,53 @@
 
   function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
   function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
-  const t = (key) => (window.I18N[state.lang] || window.I18N.ne)[key] || key;
+  const t = (key) => (window.I18N[state.lang] || {})[key] || window.I18N.en[key] || key;
   const el = (tag, props = {}, ...children) => {
     const node = Object.assign(document.createElement(tag), props);
     for (const c of children) if (c != null) node.append(c);
     return node;
   };
+  const ORIGIN_LANG = { NP: 'ne', PK: 'ur', PH: 'tl' };
+  const langMeta = (code) => window.LANGS.find((l) => l.code === code) || window.LANGS[0];
+
+  // Report text in the current language: Nepali/English are built in,
+  // others come from report.i18n (translated by Gemini on the server).
+  function tx(r) {
+    const lang = state.lang;
+    const i18n = r.i18n?.lang === lang ? r.i18n : null;
+    const pick = (en, np, tr) => tr ?? (lang === 'ne' ? np : en);
+    return {
+      summary: pick(r.facts.summary_en, r.facts.summary_np, i18n?.summary),
+      flag: (f, i) => pick(f.title_en, f.title_np, i18n?.flags?.[i]),
+      detail: (c, i) => pick(c.detail_en, c.detail_np, i18n?.claims?.[i]?.detail),
+      next: (c, i) => pick(c.next_en, c.next_np, i18n?.claims?.[i]?.next),
+    };
+  }
 
   function applyI18n() {
-    document.documentElement.lang = state.lang === 'ne' ? 'ne' : 'en';
+    const meta = langMeta(state.lang);
+    document.documentElement.lang = meta.code;
+    document.documentElement.dir = meta.dir;
     document.querySelectorAll('[data-i18n]').forEach((n) => { n.textContent = t(n.dataset.i18n); });
     document.querySelectorAll('[data-i18n-ph]').forEach((n) => { n.placeholder = t(n.dataset.i18nPh); });
-    $('langBtn').textContent = state.lang === 'ne' ? 'EN' : 'नेपाली';
+    $('langSel').value = state.lang;
     if (state.report) renderReport(state.report);
+  }
+
+  async function setLanguage(code, { manual = false } = {}) {
+    state.lang = code;
+    if (manual) localStorageSet('lang', code);
+    applyI18n();
+    const r = state.report;
+    if (r && !['en', 'ne'].includes(code) && r.i18n?.lang !== code) {
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ report: r, lang: code }),
+        });
+        const json = await res.json();
+        if (json.success && state.lang === code) { state.report = json.data; renderReport(state.report); }
+      } catch { /* keep English text */ }
+    }
   }
 
   // ---------- evidence ----------
@@ -124,6 +158,7 @@
     const body = new FormData();
     body.append('text', text);
     body.append('origin', $('originSel').value);
+    body.append('lang', state.lang);
     state.files.forEach((f) => body.append('files', f.file));
     try {
       const res = await fetch('/api/check', { method: 'POST', body });
@@ -142,10 +177,10 @@
   }
 
   function renderReport(r) {
-    const np = state.lang === 'ne';
+    const T = tx(r);
     const flags = r.flags.length
-      ? el('ul', { className: 'flags' }, ...r.flags.map((f) => el('li', { className: f.severity },
-          el('div', { textContent: np ? f.title_np : f.title_en }),
+      ? el('ul', { className: 'flags' }, ...r.flags.map((f, i) => el('li', { className: f.severity },
+          el('div', { textContent: T.flag(f, i) }),
           f.source ? el('a', { href: f.source, target: '_blank', rel: 'noopener', textContent: `${t('source')} ↗` }) : null)))
       : el('p', { textContent: t('noFlags') });
 
@@ -170,21 +205,21 @@
     const complain = el('button', { className: 'secondary', type: 'button', textContent: t('complaint') });
     complain.addEventListener('click', () => draftComplaint(r, complain));
 
-    const crossBorder = r.flags.find((f) => f.id === 'recruiter_reported');
-    const banner = crossBorder
+    const crossIdx = r.flags.findIndex((f) => f.id === 'recruiter_reported');
+    const banner = crossIdx >= 0
       ? el('div', { className: 'banner' }, el('b', { textContent: `🌏 ${t('crossBorder')}` }),
-          el('div', { textContent: np ? crossBorder.title_np : crossBorder.title_en }))
+          el('div', { textContent: T.flag(r.flags[crossIdx], crossIdx) }))
       : null;
 
     const claims = (r.claims ?? []).length
       ? el('div', { className: 'claims' }, el('h3', { textContent: t('claimsTitle') }),
-          ...r.claims.map((c) => el('div', { className: `claim ${c.status}` },
+          ...r.claims.map((c, i) => el('div', { className: `claim ${c.status}` },
             el('div', { className: 'claim-head' },
               el('span', { className: `badge ${c.status}`, textContent: t(`st_${c.status}`) }),
               el('b', { textContent: t(`claim_${c.id}`) }),
               c.value ? el('span', { className: 'muted', textContent: ` · ${c.value}` }) : null),
-            el('div', { textContent: np ? c.detail_np : c.detail_en }),
-            c.next_en ? el('div', { className: 'next', textContent: `→ ${np ? c.next_np : c.next_en}` }) : null,
+            el('div', { textContent: T.detail(c, i) }),
+            c.next_en ? el('div', { className: 'next', textContent: `→ ${T.next(c, i)}` }) : null,
             (c.source || c.checked_at) ? el('div', { className: 'meta' },
               c.source ? el('a', { href: c.source, target: '_blank', rel: 'noopener', textContent: `${t('source')} ↗` }) : null,
               c.checked_at ? el('span', { textContent: ` ${t('checkedOn')}: ${c.checked_at.slice(0, 10)}` }) : null) : null)))
@@ -192,7 +227,7 @@
 
     const card = el('div', { className: `card verdict ${r.risk}` },
       el('div', { className: `stamp risk-${r.risk}`, textContent: t(`risk${r.risk}`) }),
-      el('p', { className: 'summary', textContent: np ? r.facts.summary_np : r.facts.summary_en }),
+      el('p', { className: 'summary', textContent: T.summary }),
       banner,
       agencyOk,
       claims,
@@ -222,7 +257,7 @@
       if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
       const res = await fetch('/api/speak', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report: r, lang: state.lang === 'ne' ? 'ne' : 'en' }),
+        body: JSON.stringify({ report: r, lang: state.lang }),
       });
       if (!res.ok) throw new Error('voice unavailable');
       if (audio) audio.pause();
@@ -237,14 +272,15 @@
 
   function browserSpeak(r) {
     if (!('speechSynthesis' in window)) return;
-    const np = state.lang === 'ne';
-    const lines = [t(`risk${r.risk}`), np ? r.facts.summary_np : r.facts.summary_en, ...r.flags.map((f) => (np ? f.title_np : f.title_en))];
+    const T = tx(r);
+    const lines = [t(`risk${r.risk}`), T.summary, ...r.flags.map((f, i) => T.flag(f, i))];
+    const BCP = { ne: 'ne-NP', hi: 'hi-IN', ur: 'ur-PK', bn: 'bn-BD', tl: 'fil-PH', id: 'id-ID', en: 'en-US' };
     const u = new SpeechSynthesisUtterance(lines.join('। '));
     const voices = speechSynthesis.getVoices();
-    const pick = np
-      ? voices.find((v) => v.lang.startsWith('ne')) || voices.find((v) => v.lang.startsWith('hi'))
-      : voices.find((v) => v.lang.startsWith('en'));
-    if (pick) { u.voice = pick; u.lang = pick.lang; } else { u.lang = np ? 'ne-NP' : 'en-US'; }
+    const want = BCP[state.lang] || 'en-US';
+    const pick = voices.find((v) => v.lang.startsWith(want.slice(0, 2)))
+      || (state.lang === 'ne' ? voices.find((v) => v.lang.startsWith('hi')) : null);
+    if (pick) { u.voice = pick; u.lang = pick.lang; } else { u.lang = want; }
     u.rate = 0.95;
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
@@ -319,10 +355,11 @@
   $('fileInput').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
   $('recBtn').addEventListener('click', toggleRecord);
   $('checkBtn').addEventListener('click', check);
-  $('langBtn').addEventListener('click', () => {
-    state.lang = state.lang === 'ne' ? 'en' : 'ne';
-    localStorageSet('lang', state.lang);
-    applyI18n();
+  $('langSel').replaceChildren(...window.LANGS.map((l) => el('option', { value: l.code, textContent: l.name })));
+  $('langSel').addEventListener('change', (e) => setLanguage(e.target.value, { manual: true }));
+  // Choosing a country switches to its language, unless the user picked one.
+  $('originSel').addEventListener('change', (e) => {
+    if (!localStorageGet('lang')) setLanguage(ORIGIN_LANG[e.target.value] || 'en');
   });
   document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
   if ('speechSynthesis' in window) speechSynthesis.getVoices();
