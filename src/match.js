@@ -25,6 +25,10 @@ export function similarity(a, b) {
 }
 
 const normLicense = (v) => String(v ?? '').replace(/\D/g, '');
+const leadingNumber = (v) => {
+  const m = String(v ?? '').match(/\d+/);
+  return m ? String(Number(m[0])) : '';
+};
 
 /**
  * @param {{name?: string, license_no?: string}} query
@@ -36,6 +40,10 @@ export function findAgency(query, agencies) {
   if (lic) {
     const hit = agencies.find((a) => normLicense(a.license_no) === lic);
     if (hit) return { agency: hit, score: 1, by: 'license' };
+    // Workers often quote only the first part ("892" for "892/067/068").
+    const lead = leadingNumber(query.license_no);
+    const byLead = lead ? agencies.filter((a) => leadingNumber(a.license_no) === lead) : [];
+    if (byLead.length === 1) return { agency: byLead[0], score: 0.9, by: 'license' };
   }
   if (!query.name) return null;
   let best = null;
