@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeContact, fingerprintsFrom, mergeReport, lookupFingerprints, recordFingerprints } from '../src/fingerprint.js';
-import { buildClaims } from '../src/claims.js';
+import { buildClaims, contactMatchesAgency } from '../src/claims.js';
 import { evaluate, getPack } from '../src/rules.js';
 import { findAgency, findPeople, similarity } from '../src/match.js';
 
@@ -90,6 +90,23 @@ test('agency matching ignores Pvt Ltd noise and matches licence numbers', () => 
   assert.equal(findAgency({ license_no: '0456' }, list).by, 'license');
   assert.equal(findAgency({ name: 'Totally Different Agency' }, list), null);
   assert.ok(similarity('Gulf Star', 'Gulf Star Manpower') > 0.5);
+});
+
+test('official-number check: same number in any format matches', () => {
+  assert.equal(contactMatchesAgency(['+977 98-0000-1234'], ['9800001234']), true);
+  assert.equal(contactMatchesAgency(['+971 50 111 2222'], ['9800001234']), false);
+  assert.equal(contactMatchesAgency([], ['9800001234']), null);
+  assert.equal(contactMatchesAgency(['9800001234'], []), null);
+});
+
+test('licensed agency contacted from an unregistered number turns amber (impersonation)', () => {
+  const agency = { status: 'found', agency: { name: 'Real Overseas', license_no: '500', active: true, status: 'Active', phones: ['014400000', '9800001234'] } };
+  const facts = { visa_type: 'work', recruiter_phones: ['+971 50 111 2222'] };
+  const verdict = evaluate(facts, { agency }, NP);
+  const claims = buildClaims(facts, { agency, flags: verdict.flags }, NP);
+  const a = claims.find((c) => c.id === 'agency');
+  assert.equal(a.status, 'amber');
+  assert.ok(a.next_en.includes('9800001234'));
 });
 
 test('person matching needs every token of the listed name', () => {

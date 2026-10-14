@@ -19,6 +19,17 @@ function claim(id, status, value, detail, next = {}, source = null, checkedAt = 
   };
 }
 
+// Compare by the last 9 digits so "+977 98…" and "98…" match.
+const tail = (p) => String(p ?? '').replace(/\D/g, '').slice(-9);
+
+/** Is any recruiter number one of the agency's registered numbers? null = nothing to compare. */
+export function contactMatchesAgency(recruiterPhones, agencyPhones) {
+  const official = new Set((agencyPhones ?? []).map(tail).filter((t) => t.length >= 7));
+  const used = (recruiterPhones ?? []).map(tail).filter((t) => t.length >= 7);
+  if (official.size === 0 || used.length === 0) return null;
+  return used.some((t) => official.has(t));
+}
+
 function agencyClaim(facts, agency, pack, meta) {
   const value = [facts.agency_name, facts.agency_license_no && `#${facts.agency_license_no}`].filter(Boolean).join(' ');
   const src = pack.registry_url;
@@ -33,6 +44,13 @@ function agencyClaim(facts, agency, pack, meta) {
         return claim('agency', STATUS.RED, value,
           { en: `Listed, but licence status is "${agency.agency.status}".`, np: `सूचीमा छ, तर इजाजत "${agency.agency.status}" छ।` },
           { en: 'Do not pay an agency without a valid licence.', np: 'मान्य इजाजत नभएको संस्थालाई पैसा नतिर्नुहोस्।' }, src, at);
+      }
+      if (contactMatchesAgency(facts.recruiter_phones, agency.agency.phones) === false) {
+        const official = agency.agency.phones.join(', ');
+        return claim('agency', STATUS.AMBER, value,
+          { en: `${agency.agency.name} is licensed, but the number contacting you is not one of its registered numbers. Scammers often pretend to be real agencies.`,
+            np: `${agency.agency.name} इजाजतप्राप्त छ, तर तपाईंलाई सम्पर्क गर्ने नम्बर यसको दर्ता भएको नम्बर होइन। ठगहरू असली कम्पनी भएको बहाना गर्छन्।` },
+          { en: `Call the agency's registered number (${official}) and ask if this offer is theirs.`, np: `कम्पनीको दर्ता भएको नम्बरमा (${official}) फोन गरेर यो प्रस्ताव उनीहरूकै हो कि सोध्नुहोस्।` }, src, at);
       }
       return claim('agency', STATUS.GREEN, value,
         { en: `Found in the ${pack.registry_name}: ${agency.agency.name}${agency.agency.license_no ? ` (#${agency.agency.license_no})` : ''}, status ${agency.agency.status ?? 'listed'}.`,
