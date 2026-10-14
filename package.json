@@ -1,0 +1,23 @@
+{
+  "name": "safemigrate",
+  "version": "0.1.0",
+  "description": "Checks foreign job offers for Nepali migrant workers against DoFE public records, using Gemini on Cloud Run with Firestore.",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --env-file=.env src/server.js",
+    "test": "node --test \"test/*.test.js\"",
+    "seed": "node --env-file=.env scripts/seed-firestore.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.29.1",
+    "express": "^5.3.0",
+    "firebase-admin": "^14.5.0",
+    "multer": "^2.4.0"
+  }
+}

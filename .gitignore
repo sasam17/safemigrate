@@ -1,0 +1,7 @@
+node_modules/
+.env
+.firebase/
+*.log
+service-account*.json
+.claude/
+data/raw/

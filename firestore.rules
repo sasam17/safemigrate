@@ -1,0 +1,11 @@
+rules_version = '2';
+// All reads and writes go through the Cloud Run server (Admin SDK bypasses
+// these rules). Browsers get no direct access, so case data cannot be scraped
+// or forged.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

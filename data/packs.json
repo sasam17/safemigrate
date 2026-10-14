@@ -1,0 +1,46 @@
+{
+  "_about": "Country packs: one per origin country. Each pack names its regulator, licensed-agency registry, exit permit and fee rule. Nepal is complete; Pakistan and the Philippines use their real registries with universal red-flag rules.",
+  "NP": {
+    "code": "NP",
+    "name": "Nepal",
+    "name_np": "नेपाल",
+    "regulator": "Department of Foreign Employment (DoFE)",
+    "registry_name": "DoFE licensed recruitment agencies",
+    "registry_url": "https://foreignjob.dofe.gov.np/Home/RecruitmentAgency",
+    "complaint_url": "https://ujuri.dofe.gov.np/",
+    "exit_permit": "DoFE labour permit (Shram Swikriti)",
+    "exit_permit_np": "श्रम स्वीकृति",
+    "currency": "NPR",
+    "fee_rule": "free_visa_free_ticket",
+    "languages": ["ne", "en"]
+  },
+  "PK": {
+    "code": "PK",
+    "name": "Pakistan",
+    "name_np": "पाकिस्तान",
+    "regulator": "Bureau of Emigration & Overseas Employment (BEOE)",
+    "registry_name": "BEOE list of Overseas Employment Promoters",
+    "registry_url": "https://beoe.gov.pk/list-of-oeps",
+    "complaint_url": "https://beoe.gov.pk/",
+    "exit_permit": "Protector of Emigrants registration",
+    "exit_permit_np": "प्रोटेक्टर अफ इमिग्रेन्ट्स दर्ता",
+    "currency": "PKR",
+    "fee_rule": null,
+    "languages": ["en", "ur"]
+  },
+  "PH": {
+    "code": "PH",
+    "name": "Philippines",
+    "name_np": "फिलिपिन्स",
+    "regulator": "Department of Migrant Workers (DMW)",
+    "registry_name": "DMW licensed recruitment agencies",
+    "registry_url": "https://dmw.gov.ph/inquiry/licensed-recruitment-agencies",
+    "job_orders_url": "https://dmw.gov.ph/inquiry/approved-job-orders",
+    "complaint_url": "https://dmw.gov.ph/",
+    "exit_permit": "Overseas Employment Certificate (OEC)",
+    "exit_permit_np": "ओभरसिज इम्प्लोयमेन्ट सर्टिफिकेट (OEC)",
+    "currency": "PHP",
+    "fee_rule": null,
+    "languages": ["en", "tl"]
+  }
+}

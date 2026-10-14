@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ne">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SafeMigrate · सुरक्षित वैदेशिक रोजगार</title>
+  <meta name="description" content="Check a foreign job offer before you pay. Gemini reads the offer and checks it against Nepal's Department of Foreign Employment records.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">🛡️</span>
+      <div>
+        <strong>SafeMigrate</strong>
+        <small data-i18n="tagline">विदेश जानु अघि जाँच गर्नुहोस्</small>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="check" role="tab" data-i18n="tabCheck">जाँच</button>
+      <button class="tab" data-view="map" role="tab" data-i18n="tabMap">जोखिम नक्सा</button>
+      <button class="lang" id="langBtn" aria-label="Switch language">EN</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-check" class="view">
+      <div class="card intro">
+        <h1 data-i18n="heroTitle">यो विदेशी जागिर सुरक्षित छ?</h1>
+        <p data-i18n="heroBody">अफर लेटर, WhatsApp च्याट वा भ्वाइस म्यासेज देखाउनुहोस्। हामी वैदेशिक रोजगार विभागको रेकर्डसँग जाँच गर्छौं।</p>
+      </div>
+
+      <div class="card">
+        <label class="origin">
+          <span data-i18n="originLabel">तपाईं कुन देशबाट जाँदै हुनुहुन्छ?</span>
+          <select id="originSel">
+            <option value="NP">🇳🇵 Nepal · नेपाल</option>
+            <option value="PK">🇵🇰 Pakistan</option>
+            <option value="PH">🇵🇭 Philippines</option>
+          </select>
+        </label>
+        <div class="inputs">
+          <label class="pick">
+            <input id="fileInput" type="file" accept="image/*,application/pdf" multiple hidden>
+            <span class="ic">📷</span><span data-i18n="addPhoto">फोटो / स्क्रिनसट</span>
+          </label>
+          <button class="pick" id="recBtn" type="button"><span class="ic">🎤</span><span data-i18n="record">भ्वाइस रेकर्ड</span></button>
+        </div>
+        <ul id="fileList" class="files" aria-live="polite"></ul>
+        <textarea id="textInput" rows="4" data-i18n-ph="pastePh" placeholder="वा यहाँ म्यासेज टाँस्नुहोस्…"></textarea>
+        <button id="checkBtn" class="primary" type="button" data-i18n="checkNow">अहिले जाँच गर्नुहोस्</button>
+        <p id="formError" class="error" role="alert" hidden></p>
+      </div>
+
+      <div id="progress" class="card progress" hidden>
+        <ol>
+          <li data-step="read" data-i18n="stepRead">प्रमाण पढ्दै (Gemini)</li>
+          <li data-step="agency" data-i18n="stepAgency">म्यानपावर इजाजत जाँच्दै</li>
+          <li data-step="fraud" data-i18n="stepFraud">ठगी सूची जाँच्दै</li>
+          <li data-step="rules" data-i18n="stepRules">कानुनी नियम मिलाउँदै</li>
+        </ol>
+      </div>
+
+      <div id="result" hidden></div>
+    </section>
+
+    <section id="view-map" class="view" hidden>
+      <div class="card">
+        <h2 data-i18n="mapTitle">कहाँबाट खतरा आइरहेको छ?</h2>
+        <p class="muted" data-i18n="mapBody">सबै जाँचहरूको नाम नखुलाइएको सारांश। कुनै व्यक्तिगत विवरण राखिँदैन।</p>
+        <div class="stats" id="stats"></div>
+        <div id="map" role="img" aria-label="Map of checked offers by destination country"></div>
+        <h3 data-i18n="topFlags">धेरै देखिएका खतराका संकेत</h3>
+        <div id="flagBars"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p data-i18n="disclaimer">यो खतराको संकेत मात्र हो, कानुनी निर्णय होइन। पैसा तिर्नु अघि वैदेशिक रोजगार विभागमा पक्का गर्नुहोस्।</p>
+    <p class="muted">Gemini · Cloud Run · Firestore · Firebase</p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
