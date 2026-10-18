@@ -1,0 +1,21 @@
+# Render blueprint for the free API server (the web page itself is on Firebase Hosting).
+services:
+  - type: web
+    name: safemigrate-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --omit=dev --ignore-scripts
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FINGERPRINT_SECRET
+        generateValue: true
+      - key: DAILY_AI_LIMIT
+        value: "1500"
+      - key: ALLOWED_ORIGINS
+        sync: false

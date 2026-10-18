@@ -46,6 +46,16 @@ function rateLimit(req, res, next) {
 
 const app = express();
 app.set('trust proxy', true);
+// The page may be served from Firebase Hosting while the API runs elsewhere.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+app.use('/api', (req, res, next) => {
+  const origin = req.get('Origin');
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.set({ 'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' });
+  }
+  if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 

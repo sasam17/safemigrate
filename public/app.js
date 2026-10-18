@@ -2,6 +2,9 @@
 // textContent, never innerHTML.
 (() => {
   const MAX_FILES = 4;
+  // API server address: empty when the page and API share a host (Cloud Run),
+  // set in config.js when the page is on Firebase Hosting and the API elsewhere.
+  const API = (window.SAFEMIGRATE_API || '').replace(/\/$/, '');
   const $ = (id) => document.getElementById(id);
   const state = { lang: localStorageGet('lang') || 'ne', files: [], report: null, map: null };
 
@@ -75,7 +78,7 @@
     const r = state.report;
     if (r && !['en', 'ne'].includes(code) && r.i18n?.lang !== code) {
       try {
-        const res = await fetch('/api/translate', {
+        const res = await fetch(API + '/api/translate', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ report: r, lang: code }),
         });
         const json = await res.json();
@@ -161,7 +164,7 @@
     body.append('lang', state.lang);
     state.files.forEach((f) => body.append('files', f.file));
     try {
-      const res = await fetch('/api/check', { method: 'POST', body });
+      const res = await fetch(API + '/api/check', { method: 'POST', body });
       const json = await res.json();
       if (!json.success) throw new Error(json.error);
       finish();
@@ -255,7 +258,7 @@
     const label = btn?.textContent;
     try {
       if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
-      const res = await fetch('/api/speak', {
+      const res = await fetch(API + '/api/speak', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ report: r, lang: state.lang }),
       });
@@ -289,7 +292,7 @@
   async function draftComplaint(report, btn) {
     btn.disabled = true;
     try {
-      const res = await fetch('/api/complaint', {
+      const res = await fetch(API + '/api/complaint', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ report }),
       });
       const json = await res.json();
@@ -310,7 +313,7 @@
 
   // ---------- map ----------
   async function loadMap() {
-    const json = await (await fetch('/api/stats')).json();
+    const json = await (await fetch(API + '/api/stats')).json();
     if (!json.success) return;
     const s = json.data;
     $('stats').replaceChildren(
@@ -363,5 +366,7 @@
   });
   document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
   if ('speechSynthesis' in window) speechSynthesis.getVoices();
+  // Wake the API server early (free hosting sleeps when idle).
+  fetch(API + '/api/health').catch(() => {});
   applyI18n();
 })();
